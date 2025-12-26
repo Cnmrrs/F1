@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>F1 2025 - FINAL FIX</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Racing+Sans+One&family=Roboto:wght@400;700;900&display=swap');
+        body { font-family: 'Roboto', sans-serif; background-color: #050505; color: white; overflow: hidden; touch-action: none; user-select: none; margin: 0; }
+        .racing-font { font-family: 'Racing Sans One', cursive; }
+        canvas { display: block; width: 100vw; height: 100vh; background: #111; }
+        
+        .ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+        .interactive { pointer-events: auto; }
+        
+        /* Menü */
+        .glass-panel { background: rgba(10, 10, 10, 0.95); border: 2px solid #444; box-shadow: 0 0 80px rgba(0,0,0,1); backdrop-filter: blur(15px); }
+        .mode-card { border: 2px solid #333; padding: 15px; border-radius: 12px; cursor: pointer; transition: 0.3s; background: #1a1a1a; }
+        .mode-card.active { border-color: #ef4444; background: #400; box-shadow: 0 0 20px rgba(239, 68, 68, 0.3); }
+        .gear-btn { transition: 0.2s; cursor: pointer; }
+        .gear-btn.active { background-color: #b91c1c; border-color: #f87171; }
+
+        /* HUD */
+        .leaderboard { position: absolute; top: 20px; left: 20px; background: rgba(0,0,0,0.85); border-left: 5px solid #ef4444; padding: 12px; border-radius: 6px; min-width: 240px; font-size: 14px; }
+        .speed-panel { position: absolute; bottom: 30px; right: 30px; text-align: right; background: rgba(0,0,0,0.85); padding: 25px; border-radius: 15px; border-right: 6px solid #ef4444; }
+        .minimap-container { position: absolute; bottom: 30px; left: 30px; width: 200px; height: 150px; background: rgba(0,0,0,0.9); border: 2px solid #555; border-radius: 12px; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+        
+        /* Popups */
+        .pit-msg { position: absolute; top: 30%; left: 50%; transform: translate(-50%, -50%); background: #f00; color: #fff; padding: 20px 40px; font-size: 40px; font-weight: 900; border: 6px solid #fff; display: none; z-index: 100; animation: blink 0.4s infinite; }
+        @keyframes blink { 50% { opacity: 0.5; } }
+
+        .overlay-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: flex; align-items: center; justify-content: center; z-index: 200; }
+        
+        .pit-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: none; align-items: center; justify-content: center; z-index: 150; flex-direction: column; }
+        .pit-timer { font-size: 80px; font-weight: bold; color: yellow; font-family: monospace; }
+        
+        .pit-radio { position: absolute; top: 20%; right: 20px; background: rgba(0,0,0,0.8); border: 2px solid #0f0; color: #0f0; padding: 10px 20px; font-family: monospace; font-weight: bold; display: none; }
+        .pit-radio.late { border-color: #f00; color: #f00; }
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- Start Lights -->
+    <div id="startLights" class="ui-layer flex items-start justify-center hidden" style="top: 20px;">
+        <div class="flex gap-4 bg-black p-4 rounded-b-xl border-x-4 border-b-4 border-gray-800">
+            <div id="l1" class="w-12 h-12 rounded-full bg-gray-900 border-2 border-gray-700 transition-all duration-75"></div>
+            <div id="l2" class="w-12 h-12 rounded-full bg-gray-900 border-2 border-gray-700 transition-all duration-75"></div>
+            <div id="l3" class="w-12 h-12 rounded-full bg-gray-900 border-2 border-gray-700 transition-all duration-75"></div>
+            <div id="l4" class="w-12 h-12 rounded-full bg-gray-900 border-2 border-gray-700 transition-all duration-75"></div>
+            <div id="l5" class="w-12 h-12 rounded-full bg-gray-900 border-2 border-gray-700 transition-all duration-75"></div>
+        </div>
+    </div>
+
+    <!-- Pit Alert -->
+    <div id="pitAlert" class="pit-msg racing-font">PIT STOP İÇİN 'P'</div>
+    <div id="pitRadio" class="pit-radio">BOX BOX BOX</div>
+    
+    <!-- Pit Animation Overlay -->
+    <div id="pitOverlay" class="pit-overlay ui-layer">
+        <div class="text-4xl text-white font-bold mb-4">PIT STOP</div>
+        <div id="pitTimer" class="pit-timer">3.5</div>
+        <div id="pitStatus" class="text-xl text-gray-400 mt-2">LASTİKLER DEĞİŞİYOR...</div>
+    </div>
+
+    <!-- HUD -->
+    <div id="hud" class="ui-layer hidden">
+        <div class="leaderboard">
+            <div class="text-xs text-gray-500 font-black mb-2 uppercase italic flex justify-between">
+                <span>Leaderboard</span>
+                <span id="lapCounter" class="text-white">TUR 1/5</span>
+            </div>
+            <div id="lbContent"></div>
+        </div>
+        
+        <div class="minimap-container">
+            <canvas id="minimapCanvas" width="200" height="150"></canvas>
+        </div>
+
+        <div class="speed-panel">
+            <div class="text-xs text-gray-400 font-bold mb-1 tracking-widest" id="gearModeLabel">AUTO</div>
+            <div class="text-4xl text-yellow-400 font-black" id="gearDisplay">N</div>
+            <div class="text-7xl racing-font text-white" id="speedDisplay">0</div>
+            <div class="text-sm text-gray-500 font-bold">KM/H</div>
+            <div class="mt-4 w-56 bg-gray-800 h-4 rounded-full overflow-hidden border border-gray-600">
+                <div id="damageBar" class="h-full bg-green-500 w-full transition-all"></div>
+            </div>
+            <div class="text-[10px] text-gray-400 mt-2 uppercase font-bold">Araç Sağlığı</div>
+            <div id="pitReqStatus" class="text-[10px] text-gray-500 mt-1 font-bold uppercase text-right">NO PIT REQUEST</div>
+        </div>
+
+        <div class="absolute top-5 right-5 flex gap-3 interactive">
+            <div class="bg-gray-800 p-3 rounded-full border border-gray-600 cursor-pointer text-white" onclick="toggleAudio()" title="Ses Aç/Kapa" id="muteBtn">🔇</div>
+            <div class="bg-gray-800 p-3 rounded-full border border-gray-600 cursor-pointer text-white" onclick="showControls()" title="Kontroller">🎮</div>
+            <div class="bg-gray-800 p-3 rounded-full border border-gray-600 cursor-pointer text-white" onclick="togglePause()" title="Durdur">II</div>
+        </div>
+    </div>
+
+    <!-- MAIN MENU -->
+    <div id="mainMenu" class="ui-layer interactive flex items-center justify-center bg-black/90 z-50">
+        <div class="glass-panel p-10 rounded-3xl w-full max-w-7xl h-[90vh] flex flex-col">
+            <h1 class="racing-font text-8xl text-center mb-0 italic tracking-tighter"><span class="text-red-600">F1</span> 2025</h1>
+            <p class="text-center text-gray-500 mb-8 tracking-[12px] text-xs uppercase font-bold">Final Fix Edition</p>
+
+            <div class="flex flex-1 gap-10 overflow-hidden">
+                <!-- Modes -->
+                <div class="w-1/4 space-y-5 overflow-y-auto pr-2">
+                    <div class="mode-card active" id="modeSINGLE" onclick="setGameMode('SINGLE')">
+                        <div class="font-black text-2xl">KARİYER</div>
+                        <div class="text-xs text-gray-500">Tek Kişilik</div>
+                    </div>
+                    <div class="mode-card" id="modeSPLIT" onclick="setGameMode('SPLIT')">
+                        <div class="font-black text-2xl">SPLIT SCREEN</div>
+                        <div class="text-xs text-gray-500">2 Kişilik (Aynı PC)</div>
+                    </div>
+                    <div class="mode-card" id="modeONLINE" onclick="setGameMode('ONLINE')">
+                        <div class="font-black text-2xl text-red-500">ONLINE</div>
+                        <div class="text-xs text-gray-500">Uzak Bağlantı (Beta)</div>
+                    </div>
+                    
+                    <div class="pt-6 border-t border-gray-800">
+                        <label class="text-[10px] font-black text-gray-500 block mb-2 uppercase">PİST SEÇİMİ</label>
+                        <select id="trackSelect" class="w-full bg-gray-900 border border-gray-700 p-4 rounded-xl text-white outline-none">
+                            <option value="tr">İSTANBUL PARK</option>
+                            <option value="monaco">MONACO GP</option>
+                            <option value="baku">BAKU CITY CIRCUIT</option>
+                            <option value="vegas">LAS VEGAS STRIP</option>
+                        </select>
+                    </div>
+
+                    <div class="pt-4 border-t border-gray-800">
+                        <label class="text-[10px] font-black text-gray-500 block mb-2 uppercase">VİTES MODU</label>
+                        <div class="flex gap-2 bg-gray-900 p-1 rounded-lg">
+                            <div onclick="setGear('AUTO')" id="gearAUTO" class="gear-btn active flex-1 text-center py-2 rounded font-bold text-xs text-white bg-red-900 border border-red-500">OTO</div>
+                            <div onclick="setGear('MANUAL')" id="gearMANUAL" class="gear-btn flex-1 text-center py-2 rounded font-bold text-xs text-gray-500 bg-gray-800 border-transparent">MANUEL</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Selection Panel -->
+                <div class="flex-1 bg-white/5 rounded-2xl border border-white/10 relative overflow-hidden flex flex-col p-8">
+                    <!-- Single -->
+                    <div id="panelSINGLE" class="h-full flex flex-col">
+                        <h2 class="text-3xl font-black mb-6 text-red-600 italic">PİLOT SEÇ</h2>
+                        <div class="grid grid-cols-2 gap-4 flex-1 overflow-y-auto pr-4" id="gridSINGLE"></div>
+                        <button onclick="startGame()" class="mt-8 w-full bg-red-600 hover:bg-red-700 py-7 rounded-2xl font-black text-4xl racing-font shadow-2xl transition-transform active:scale-95">YARIŞA BAŞLA</button>
+                    </div>
+
+                    <!-- Split -->
+                    <div id="panelSPLIT" class="h-full hidden flex-col">
+                        <div class="flex flex-1 gap-6 overflow-hidden">
+                            <div class="flex-1 flex flex-col">
+                                <h3 class="text-blue-500 font-black text-sm mb-3">OYUNCU 1 (WASD)</h3>
+                                <div class="flex-1 overflow-y-auto space-y-3 pr-2" id="gridSPLIT1"></div>
+                            </div>
+                            <div class="flex-1 flex flex-col">
+                                <h3 class="text-red-500 font-black text-sm mb-3">OYUNCU 2 (YÖN TUŞLARI)</h3>
+                                <div class="flex-1 overflow-y-auto space-y-3 pr-2" id="gridSPLIT2"></div>
+                            </div>
+                        </div>
+                        <button id="btnSplitStart" onclick="startGame()" class="mt-6 w-full bg-gray-800 py-7 rounded-2xl font-black text-3xl opacity-50 cursor-not-allowed" disabled>İKİ TARAF DA SEÇMELİ</button>
+                    </div>
+
+                    <!-- Online -->
+                    <div id="panelONLINE" class="h-full hidden flex-col items-center justify-center gap-8">
+                        <div class="flex gap-6 w-full">
+                            <div onclick="initPeer(true)" class="flex-1 bg-gray-800 p-12 rounded-2xl text-center cursor-pointer hover:bg-gray-700 border-b-4 border-red-600">ODA KUR</div>
+                            <div onclick="showJoin()" class="flex-1 bg-gray-800 p-12 rounded-2xl text-center cursor-pointer hover:bg-gray-700 border-b-4 border-blue-600">BAĞLAN</div>
+                        </div>
+                        <div id="onlineInfo" class="text-center hidden">
+                            <p class="text-gray-500 font-bold mb-2">BU ID'Yİ ARKADAŞINA VER:</p>
+                            <h3 id="peerIdDisplay" class="text-5xl font-mono text-yellow-500 font-black tracking-widest bg-black p-6 rounded-xl border border-gray-800">...</h3>
+                        </div>
+                        <div id="joinArea" class="w-full hidden">
+                            <input id="joinInput" type="text" placeholder="Arkadaşının ID'sini gir" class="w-full p-6 bg-black border border-gray-700 text-white rounded-xl mb-6 text-2xl font-mono">
+                            <button onclick="initPeer(false)" class="w-full bg-green-600 py-6 rounded-xl font-black text-2xl hover:bg-green-700">BAĞLAN VE BAŞLA</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pause Screen -->
+    <div id="pauseScreen" class="overlay-screen hidden interactive">
+        <div class="text-center">
+            <h2 class="text-8xl racing-font italic text-white mb-10">DURAKLATILDI</h2>
+            <div class="flex flex-col gap-6">
+                <button onclick="togglePause()" class="w-96 bg-white text-black py-5 rounded-xl font-black text-2xl hover:bg-gray-200">DEVAM ET</button>
+                <button onclick="location.reload()" class="w-96 bg-red-600 text-white py-5 rounded-xl font-black text-2xl hover:bg-red-700">MENÜYE DÖN</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Controls Screen -->
+    <div id="controlsScreen" class="overlay-screen hidden interactive" onclick="this.classList.add('hidden')">
+        <div class="bg-gray-900 p-10 rounded-2xl border-2 border-white max-w-4xl w-full" onclick="event.stopPropagation()">
+            <h2 class="text-4xl font-black mb-8 text-center text-red-500">KONTROLLER</h2>
+            <div class="grid grid-cols-2 gap-10">
+                <div>
+                    <h3 class="text-2xl font-bold mb-4 border-b pb-2">OYUNCU 1</h3>
+                    <ul class="space-y-4 text-gray-300 text-lg">
+                        <li class="flex justify-between"><span>GAZ / FREN</span> <span class="font-mono text-white bg-gray-800 px-2 rounded">W / S</span></li>
+                        <li class="flex justify-between"><span>YÖN</span> <span class="font-mono text-white bg-gray-800 px-2 rounded">A / D</span></li>
+                        <li class="flex justify-between"><span>PIT İSTEK (RADIO)</span> <span class="font-mono text-white bg-gray-800 px-2 rounded">P</span></li>
+                    </ul>
+                </div>
+                <div>
+                    <h3 class="text-2xl font-bold mb-4 border-b pb-2">OYUNCU 2</h3>
+                    <ul class="space-y-4 text-gray-300 text-lg">
+                        <li class="flex justify-between"><span>GAZ / FREN</span> <span class="font-mono text-white bg-gray-800 px-2 rounded">↑ / ↓</span></li>
+                        <li class="flex justify-between"><span>YÖN</span> <span class="font-mono text-white bg-gray-800 px-2 rounded">← / →</span></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="mt-8 text-center text-gray-500">Kapatmak için bir yere tıkla</div>
+        </div>
+    </div>
+
+    <script>
+        // --- CONFIG ---
+        const TEAMS = [
+            { name: 'Red Bull', color: '#0600EF', pitTime: 2.5, drivers: ['Verstappen', 'Tsunoda'] },
+            { name: 'Ferrari', color: '#DC0000', pitTime: 3.0, drivers: ['Leclerc', 'Hamilton'] },
+            { name: 'McLaren', color: '#FF8700', pitTime: 2.8, drivers: ['Norris', 'Piastri'] },
+            { name: 'Mercedes', color: '#00D2BE', pitTime: 2.9, drivers: ['Russell', 'Antonelli'] },
+            { name: 'Aston Martin', color: '#006F62', pitTime: 3.2, drivers: ['Alonso', 'Stroll'] }
+        ];
+        const SPONSORS = ['ROLEX', 'PIRELLI', 'NPM', 'ARAMCO', 'DHL', 'AWS'];
+
+        // --- GLOBAL ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const mmCanvas = document.getElementById('minimapCanvas');
+        const mmCtx = mmCanvas.getContext('2d');
+
+        let gameState = 'MENU';
+        let currentMode = 'SINGLE';
+        let gearMode = 'AUTO';
+        let trackPoints = [];
+        let cars = [];
+        let players = [];
+        let keys = {};
+        let selections = [null, null];
+        let trackWidth = 350; 
+        
+        let peer, conn, isHost = false;
+        let audioCtx, engineOsc, engineGain, isMuted = true;
+
+        // --- INIT ---
+        function init() {
+            resize();
+            window.addEventListener('resize', resize);
+            window.addEventListener('keydown', e => { 
+                keys[e.code] = true;
+                if(e.code === 'Escape') togglePause();
+                if(e.code === 'KeyP') togglePitRequest(players[0]);
+            });
+            window.addEventListener('keyup', e => keys[e.code] = false);
+            
+            generateTrack('tr');
+            populateSelectionGrids();
+            requestAnimationFrame(mainLoop);
+        }
+        function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+
+        // --- AUDIO ---
+        function initAudio() {
+            if(audioCtx) return;
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            engineOsc = audioCtx.createOscillator();
+            engineGain = audioCtx.createGain();
+            engineOsc.type = 'sawtooth';
+            engineOsc.frequency.value = 60;
+            engineGain.gain.value = 0.1;
+            engineOsc.connect(engineGain);
+            engineGain.connect(audioCtx.destination);
+            engineOsc.start();
+            isMuted = false;
+            document.getElementById('muteBtn').innerText = '🔊';
+        }
+
+        function toggleAudio() {
+            if(!audioCtx) initAudio();
+            else {
+                isMuted = !isMuted;
+                document.getElementById('muteBtn').innerText = isMuted ? '🔇' : '🔊';
+                engineGain.gain.value = isMuted ? 0 : 0.1;
+            }
+        }
+
+        // --- TRACK GENERATOR ---
+        function generateTrack(type) {
+            trackPoints = [];
+            let pts = [];
+            if(type === 'tr') pts = [{x:0,y:0},{x:1500,y:0},{x:1800,y:500},{x:2200,y:800},{x:1500,y:1200},{x:500,y:1000},{x:-200,y:600}];
+            else if(type === 'monaco') pts = [{x:0,y:0},{x:600,y:-200},{x:1000,y:200},{x:1000,y:800},{x:500,y:1000},{x:0,y:800},{x:-400,y:400}];
+            else if(type === 'vegas') pts = [{x:0,y:0},{x:2500,y:0},{x:2700,y:500},{x:1500,y:1000},{x:0,y:1000},{x:-500,y:500}];
+            else pts = [{x:0,y:0},{x:1500,y:0},{x:1500,y:600},{x:800,y:600},{x:800,y:1000},{x:0,y:1000}]; 
+
+            for(let i=0; i<pts.length; i++) {
+                let p1 = pts[i], p2 = pts[(i+1)%pts.length];
+                for(let t=0; t<1; t+=0.02) { 
+                    let x = p1.x + (p2.x - p1.x) * t;
+                    let y = p1.y + (p2.y - p1.y) * t;
+                    trackPoints.push({
+                        x: x*3.5, y: y*3.5, 
+                        isStart: i===0 && t<0.1, 
+                        hasCrowd: Math.random()>0.5,
+                        sponsor: Math.random()>0.8 ? SPONSORS[Math.floor(Math.random()*SPONSORS.length)] : null
+                    });
+                }
+            }
+        }
+
+        // --- GAME LOGIC ---
+        function createCar(ti, di, isPlayer, inputId) {
+            const t = TEAMS[ti];
+            return {
+                name: t.drivers[di], team: t, isPlayer, inputId,
+                x: 0, y: 0, angle: 0, speed: 0, accel: 0.9, friction: 0.99,
+                health: 100, lap: 1, checkpoint: 0, totalDist: 0, targetIdx: 1,
+                gear: 1, isPitting: false, pitTimer: 0,
+                pitRequested: false, lateCall: false
+            };
+        }
+
+        function togglePitRequest(p) {
+            if(!p || p.isPitting || gameState !== 'RACING') return;
+            p.pitRequested = !p.pitRequested;
+            
+            const radio = document.getElementById('pitRadio');
+            const status = document.getElementById('pitReqStatus');
+            
+            if(p.pitRequested) {
+                const distToStart = Math.sqrt((p.x-trackPoints[0].x)**2 + (p.y-trackPoints[0].y)**2);
+                p.lateCall = distToStart < 1500; // Too close?
+                
+                radio.innerText = p.lateCall ? "LATE CALL! (+3.0s)" : "BOX BOX CONFIRMED";
+                radio.className = p.lateCall ? "pit-radio late" : "pit-radio";
+                status.innerText = "PIT: REQUESTED" + (p.lateCall ? " (LATE)" : "");
+                status.style.color = p.lateCall ? "red" : "#0f0";
+            } else {
+                radio.innerText = "STAY OUT";
+                radio.className = "pit-radio";
+                status.innerText = "PIT: CANCELLED";
+                status.style.color = "gray";
+            }
+            
+            radio.style.display = 'block';
+            setTimeout(() => radio.style.display = 'none', 2000);
+        }
+
+        function update() {
+            if(gameState !== 'RACING') return;
+
+            cars.forEach(c => {
+                if(c.isPitting) {
+                    if(Date.now() > c.pitTimer) { 
+                        c.isPitting = false; 
+                        c.health = 100; 
+                        c.pitRequested = false;
+                        c.lateCall = false;
+                        c.speed = 20; 
+                        c.x += Math.cos(c.angle)*150; 
+                        document.getElementById('pitOverlay').style.display = 'none';
+                        document.getElementById('pitReqStatus').innerText = "NO PIT REQUEST";
+                        document.getElementById('pitReqStatus').style.color = "gray";
+                    }
+                    return;
+                }
+
+                // AI Strategy
+                if(!c.isPlayer && c.health < 40 && !c.pitRequested) {
+                    c.pitRequested = true;
+                }
+
+                let gas = 0, turn = 0, brake = 0;
+                if(c.isPlayer && c.inputId === 'p1') {
+                    if(keys['KeyW']) gas = 1; if(keys['KeyS']) brake = 1;
+                    if(keys['KeyA']) turn = -1; if(keys['KeyD']) turn = 1;
+                } else if(!c.isPlayer) {
+                    const t = trackPoints[c.targetIdx];
+                    const dx = t.x - c.x, dy = t.y - c.y;
+                    let diff = Math.atan2(dy, dx) - c.angle;
+                    while(diff < -Math.PI) diff += Math.PI*2; while(diff > Math.PI) diff -= Math.PI*2;
+                    c.angle += diff * 0.12;
+                    gas = 0.85;
+                    if(Math.sqrt(dx*dx+dy*dy) < 350) c.targetIdx = (c.targetIdx + 1) % trackPoints.length;
+                }
+
+                // Pit Trigger Logic
+                if(c.pitRequested && isNearPit(c)) {
+                    startPitStop(c);
+                }
+
+                c.speed += gas * c.accel;
+                if(brake) c.speed -= 2.0;
+                c.speed *= c.friction;
+                c.angle += turn * 0.07;
+                c.x += Math.cos(c.angle) * c.speed;
+                c.y += Math.sin(c.angle) * c.speed;
+
+                // Offroad/Collision -> Damage
+                let minD = 9999;
+                for(let i=0; i<trackPoints.length; i+=10) {
+                    const d = Math.sqrt((c.x-trackPoints[i].x)**2 + (c.y-trackPoints[i].y)**2);
+                    if(d < minD) minD = d;
+                }
+                if(minD > 300) { 
+                    c.speed *= 0.92; 
+                    if(c.speed > 10) c.health -= 0.2; 
+                }
+
+                c.totalDist = c.lap * 100000 + c.x; 
+            });
+            
+            if(audioCtx && players[0] && !isMuted) {
+                engineOsc.frequency.setTargetAtTime(60 + (players[0].speed*2), audioCtx.currentTime, 0.1);
+            }
+        }
+
+        function isNearPit(c) {
+            const d = Math.sqrt((c.x-trackPoints[0].x)**2 + (c.y-trackPoints[0].y)**2);
+            return d < 600; // Trigger zone near start
+        }
+
+        function startPitStop(c) {
+            c.isPitting = true;
+            c.speed = 0;
+            
+            let totalTime = c.team.pitTime;
+            if(c.lateCall) totalTime += 3.0; // Penalty
+            
+            if(c.isPlayer) {
+                document.getElementById('pitOverlay').style.display = 'flex';
+                document.getElementById('pitStatus').innerText = c.lateCall ? "GEÇ ÇAĞRI CEZASI (+3.0s)" : "LASTİKLER DEĞİŞİYOR...";
+                document.getElementById('pitStatus').className = c.lateCall ? "text-2xl mt-2 font-mono text-red-500" : "text-xl text-gray-400 mt-2";
+                
+                let el = document.getElementById('pitTimer');
+                let timerVal = totalTime;
+                c.pitTimer = Date.now() + (totalTime * 1000);
+                
+                let iv = setInterval(() => {
+                    timerVal -= 0.1;
+                    el.innerText = timerVal.toFixed(1);
+                    if(timerVal <= 0 || !c.isPitting) clearInterval(iv);
+                }, 100);
+            } else {
+                c.pitTimer = Date.now() + (totalTime * 1000);
+            }
+        }
+
+        // --- DRAW ---
+        function draw() {
+            ctx.clearRect(0,0,canvas.width,canvas.height);
+            if(gameState === 'MENU' || cars.length === 0) return;
+
+            const p = players[0];
+            ctx.save();
+            ctx.translate(canvas.width/2, canvas.height/2);
+            ctx.scale(0.35, 0.35);
+            ctx.translate(-p.x, -p.y);
+
+            // Track
+            ctx.lineWidth = 600; ctx.strokeStyle = '#c00'; ctx.beginPath();
+            trackPoints.forEach((pt,i)=>i==0?ctx.moveTo(pt.x,pt.y):ctx.lineTo(pt.x,pt.y)); ctx.closePath(); ctx.stroke();
+            ctx.lineWidth = 550; ctx.strokeStyle = '#222'; ctx.stroke();
+            
+            // Details
+            ctx.fillStyle = 'white'; ctx.fillRect(trackPoints[0].x-30, trackPoints[0].y-275, 60, 550); // Start Line
+            
+            // Cars
+            cars.forEach(c => {
+                ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.angle);
+                ctx.fillStyle = c.team.color; ctx.fillRect(-45, -22, 90, 44);
+                ctx.fillStyle = c.isPlayer ? '#0f0' : 'yellow'; ctx.beginPath(); ctx.arc(0,0,12,0,7); ctx.fill();
+                
+                // Pit Indicator Bubble
+                if(c.pitRequested) {
+                    ctx.fillStyle = c.lateCall ? "red" : "#0f0";
+                    ctx.beginPath(); ctx.arc(0, -60, 10, 0, 7); ctx.fill();
+                }
+                
+                ctx.rotate(-c.angle);
+                ctx.fillStyle = "white"; ctx.font = "bold 40px Arial"; ctx.textAlign="center";
+                ctx.fillText(c.name, 0, -60);
+                ctx.restore();
+            });
+            ctx.restore();
+
+            updateHUD(p);
+        }
+
+        function updateHUD(p) {
+            document.getElementById('speedDisplay').innerText = Math.round(p.speed * 8);
+            document.getElementById('damageBar').style.width = p.health + '%';
+            
+            // Minimap
+            mmCtx.fillStyle = '#000'; mmCtx.fillRect(0,0,220,160);
+            mmCtx.save(); mmCtx.translate(110,80); mmCtx.scale(0.012, 0.012);
+            mmCtx.lineWidth = 600; mmCtx.strokeStyle = '#333';
+            mmCtx.beginPath(); trackPoints.forEach(pt=>mmCtx.lineTo(pt.x,pt.y)); mmCtx.closePath(); mmCtx.stroke();
+            cars.forEach(c => {
+                mmCtx.fillStyle = c.isPlayer ? '#0f0' : '#f00';
+                mmCtx.beginPath(); mmCtx.arc(c.x, c.y, 600, 0, 7); mmCtx.fill();
+            });
+            mmCtx.restore();
+
+            const sorted = [...cars].sort((a,b)=>b.totalDist-a.totalDist);
+            document.getElementById('lbContent').innerHTML = sorted.slice(0,5).map((c,i)=>
+                `<div class="flex justify-between border-b border-white/10 py-1 ${c==p?'text-green-400':''}"><span>${i+1}. ${c.name}</span> <span class="text-xs ${c.pitRequested?'text-yellow-500':''}">${c.pitRequested?'(BOX)':''}</span></div>`
+            ).join('');
+        }
+
+        // --- MENU HELPERS ---
+        function setGameMode(mode) {
+            currentMode = mode;
+            document.querySelectorAll('.mode-card').forEach(c => c.classList.remove('active'));
+            document.getElementById('mode' + mode).classList.add('active');
+            ['SINGLE', 'SPLIT', 'ONLINE'].forEach(m => document.getElementById('panel' + m).classList.add('hidden'));
+            document.getElementById('panel' + mode).classList.remove('hidden');
+        }
+        function populateSelectionGrids() {
+            const el = document.getElementById('gridSINGLE');
+            TEAMS.forEach((t, ti) => t.drivers.forEach((d, di) => {
+                const btn = document.createElement('div');
+                btn.className = "p-4 bg-gray-800 rounded-xl border-2 border-transparent cursor-pointer hover:border-gray-500 flex justify-between items-center";
+                btn.style.borderLeft = `5px solid ${t.color}`;
+                btn.innerHTML = `<div><div class="font-black text-lg">${d.toUpperCase()}</div><div class="text-[10px] text-gray-500 font-bold">${t.name}</div></div>`;
+                btn.onclick = () => {
+                    selections[0] = {ti, di};
+                    document.querySelectorAll(`#gridSINGLE div`).forEach(x => x.classList.remove('bg-red-600', 'border-white'));
+                    btn.classList.add('bg-red-600', 'border-white');
+                };
+                el.appendChild(btn);
+            }));
+        }
+        function startGame() {
+            // Eğer seçim yapılmadıysa varsayılan (Red Bull - Verstappen) seçimi yap
+            if(!selections[0]) selections[0] = {ti: 0, di: 0};
+            
+            initAudio();
+            gameState = 'RACING';
+            document.getElementById('mainMenu').classList.add('hidden');
+            document.getElementById('hud').classList.remove('hidden');
+            document.getElementById('startLights').classList.remove('hidden');
+            
+            cars = []; players = [];
+            const p0=trackPoints[0], angle = Math.atan2(trackPoints[1].y-p0.y, trackPoints[1].x-p0.x);
+            players.push(createCar(selections[0].ti, selections[0].di, true, 'p1'));
+            players[0].x = p0.x - Math.cos(angle)*300; players[0].y = p0.y - Math.sin(angle)*300; players[0].angle = angle;
+            cars.push(players[0]);
+            
+            for(let i=0; i<5; i++) {
+                const ai = createCar(i, 0, false, null);
+                ai.x = p0.x - Math.cos(angle)*(600+i*150); ai.y = p0.y - Math.sin(angle)*(600+i*150); ai.angle = angle;
+                cars.push(ai);
+            }
+            
+            let l=0; 
+            const iv = setInterval(()=>{ 
+                l++; if(l<=5) document.getElementById('l'+l).classList.add('active'); 
+                else { clearInterval(iv); setTimeout(()=>{ document.getElementById('startLights').classList.add('hidden'); }, 1000); } 
+            }, 800);
+        }
+        function setGear(m) { gearMode=m; }
+        function togglePause() { gameState = gameState==='PAUSED'?'RACING':'PAUSED'; }
+        function toggleAudio() { isMuted=!isMuted; if(engineGain) engineGain.gain.value = isMuted?0:0.1; }
+        function mainLoop() { if(gameState!=='PAUSED') update(); draw(); requestAnimationFrame(mainLoop); }
+        function showControls() { document.getElementById('controlsScreen').classList.remove('hidden'); }
+        
+        init();
+    </script>
+</body>
+</html>
